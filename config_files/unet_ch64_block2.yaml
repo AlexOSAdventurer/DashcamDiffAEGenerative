@@ -1,0 +1,16 @@
+input_size: 64
+input_channels: 3
+noise_model:
+  block_list_base_channels: 64
+  block_list_channels_mult: [1,2,4,8]
+  num_res_blocks: 2
+  attention_heads: [1]
+  attention_resolutions: [16]
+  latent_space: 512
+encoder_model:
+  block_list_base_channels: 64
+  block_list_channels_mult: [1,2,4,8,8]
+  latent_space: 512
+  num_res_blocks: 2
+  attention_heads: [1]
+  attention_resolutions: [16]

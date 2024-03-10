@@ -1,0 +1,18 @@
+model:
+  batch_size: 24
+  first_stage_needed: True
+  base_learning_rate: 0.000025
+  total_samples: 50000000
+  in_size: 4096
+  in_size_sqrt: 64
+  t_range: 1000
+  img_depth: 3
+  beta_small: 0.0001
+  beta_large: 0.02
+  unet_config: config_files/unet_ch64_block2.yaml
+  recycle_previous_version: True
+  previous_version: 1
+data:
+  base_dir: /common/cseos2g/papapalpi/
+  train: data/train_float_256x256_64x64_latent_better.npy
+  val: data/val_float_256x256_64x64_latent_better.npy

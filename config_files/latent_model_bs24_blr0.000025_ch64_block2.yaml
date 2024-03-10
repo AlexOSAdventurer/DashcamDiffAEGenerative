@@ -1,0 +1,10 @@
+diffae:
+  diffae_config: config_files/diffusion_model_bs24_blr0.000025_ch64_block2.yaml
+  checkpoint_file: grid_search_models/diffusion_model_bs24_blr0.000025_ch64_block2/model.ckpt
+model:
+  batch_size: 24
+  total_samples: 50000000
+data:
+  base_dir: /common/cseos2g/papapalpi/
+  train: data/train_float_256x256_64x64_latent_better.npy
+  val: data/val_float_256x256_64x64_latent_better.npy
