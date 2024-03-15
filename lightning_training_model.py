@@ -76,19 +76,19 @@ class DiffusionModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         encoding = self.fetch_encoding(batch, False)
         loss = self.get_loss(encoding, batch_idx)
-        self.log("train/loss", loss)
+        self.log("train/loss", loss, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         encoding = self.fetch_encoding(batch, False)
         loss = self.get_loss(encoding, batch_idx)
-        self.log("val/loss", loss)
+        self.log("val/loss", loss, sync_dist=True)
         if ((batch_idx == 0) and (self.global_rank == 0)):
             self.val_batch = encoding
         return
 
     def on_validation_epoch_end(self):
-        if ((self.global_rank != 0) or ((self.current_epoch % 100) != 25)):
+        if (self.global_rank != 0):
             return
         # Get tensorboard logger
         tb_logger = None

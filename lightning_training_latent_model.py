@@ -25,8 +25,6 @@ class LatentModel(pl.LightningModule):
         self.diffae_model.generate_first_stage() #Overwrite the old first stage autoencoder
         self.diffae_model = self.diffae_model.eval()
         self.latent_model = unet_autoencoder.generate_ddim_model()
-        self.encoding_cache = {"train": None, "val": None, "train_idx": {}, "val_idx" : {}}
-        self.train_idx_list = {"count": 0, "max": 0}
 
     def fetch_encoding(self, batch, sample):
         return self.diffae_model.fetch_encoding(batch, sample)
@@ -40,23 +38,11 @@ class LatentModel(pl.LightningModule):
     def get_loss(self, x, batch_idx):
         number_of_images = x.shape[0]
         time_steps = diffusion.create_random_time_steps(number_of_images, self.t_range, self.device)
-        #x = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, images)
         noised_zsem, source_noise = diffusion.diffuse_images(x, time_steps, self.t_range, self.beta_small, self.beta_large)
         estimated_noise = self.forward(noised_zsem, time_steps)
         return F.mse_loss(estimated_noise, source_noise)
 
     def training_step(self, batch, batch_idx):
-        '''if (self.encoding_cache["train"] is None) or (batch_idx not in self.encoding_cache["train_idx"]):
-            encoding = self.fetch_encoding(batch, False)
-            z_sem = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, encoding)
-            if self.encoding_cache["train"] is None:
-                self.encoding_cache["train"] = torch.empty((70000, z_sem.shape[1]), dtype=z_sem.dtype, device = z_sem.device)
-            self.encoding_cache["train"][(batch_idx * self.batch_size):((batch_idx * self.batch_size) + batch.shape[0])] = z_sem.detach()
-            self.encoding_cache["train_idx"][batch_idx] = True
-        self.train_idx_list["count"] = self.train_idx_list["count"] + 1
-        self.train_idx_list["max"] = max(batch_idx, self.train_idx_list["max"])
-        loss = self.get_loss(self.encoding_cache["train"][(batch_idx * self.batch_size):((batch_idx * self.batch_size) + batch.shape[0])].clone(), batch_idx)
-        '''
         encoding = self.fetch_encoding(batch, False)
         z_sem = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, encoding)
         loss = self.get_loss(z_sem, batch_idx)
@@ -64,16 +50,6 @@ class LatentModel(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        '''
-        if (self.encoding_cache["val"] is None) or (batch_idx not in self.encoding_cache["val_idx"]):
-            encoding = self.fetch_encoding(batch, False)
-            z_sem = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, encoding)
-            if self.encoding_cache["val"] is None:
-                self.encoding_cache["val"] = torch.empty((10000, z_sem.shape[1]), dtype=z_sem.dtype, device = z_sem.device)
-            self.encoding_cache["val"][(batch_idx * self.batch_size):((batch_idx * self.batch_size) + batch.shape[0])] = z_sem.detach()
-            self.encoding_cache["val_idx"][batch_idx] = True
-        loss = self.get_loss(self.encoding_cache["val"][(batch_idx * self.batch_size):((batch_idx * self.batch_size) + batch.shape[0])].clone(), batch_idx)
-        '''
         encoding = self.fetch_encoding(batch, False)
         z_sem = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, encoding)
         loss = self.get_loss(z_sem, batch_idx)
@@ -81,10 +57,6 @@ class LatentModel(pl.LightningModule):
         return loss
 
     def on_validation_epoch_end(self):
-        print(f"Training idx max ({self.train_idx_list['max']}) and count ({self.train_idx_list['count']})")
-        print(self.encoding_cache["train_idx"])
-        print(self.encoding_cache["val_idx"])
-        self.train_idx_list = {"count": 0, "max": 0}
         if ((self.global_rank != 0) or ((self.current_epoch % 250) != 248)):
             return
         # Get tensorboard logger
