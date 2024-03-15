@@ -1,0 +1,27 @@
+name: dashcam_diffae_generative
+channels:
+  - pytorch
+  - nvidia
+  - defaults
+  - menpo
+dependencies:
+  - python=3.11.7
+  - pip
+  - pytorch=2.2.1
+  - pytorch-cuda=12.1
+  - torchvision
+  - numpy=1.25.0
+  - joblib
+  - opencv
+  - matplotlib
+  - pip:
+    - pytorch-lightning==2.0.3
+    - git+https://github.com/CompVis/latent-diffusion.git
+    - opencv-contrib-python
+    - einops
+    - -e git+https://github.com/CompVis/taming-transformers.git@master#egg=taming-transformers
+    - tensorboard
+    - tensorboardX
+    - jsonargparse[signatures]>=4.17.0
+    - torchmetrics==1.3.1
+    - torch-fidelity
