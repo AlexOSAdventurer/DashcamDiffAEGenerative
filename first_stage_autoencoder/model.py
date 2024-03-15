@@ -1,14 +1,13 @@
 import sys
-sys.path.append('/home/cseos2g/papapalpi/.local/lib/python3.10/site-packages/')
 import torch
 import pytorch_lightning as pl
 
-from .ldm.modules.diffusionmodules.model import Encoder, Decoder
-from .ldm.modules.diffusionmodules.openaimodel import UNetModel
+from ldm.modules.diffusionmodules.model import Encoder, Decoder
+from ldm.modules.diffusionmodules.openaimodel import UNetModel
 
-from .ldm.util import instantiate_from_config
+from ldm.util import instantiate_from_config
 
-from .distribution import DiagonalGaussianDistribution
+from distribution import DiagonalGaussianDistribution
 
 class AutoencoderKL(pl.LightningModule):
     def __init__(self,
@@ -18,6 +17,7 @@ class AutoencoderKL(pl.LightningModule):
                  base_learning_rate
                  ):
         super().__init__()
+        self.automatic_optimization = False
         self.encoder = Encoder(**ddconfig)
         self.decoder = Decoder(**ddconfig)
         self.loss = instantiate_from_config(lossconfig)
@@ -52,26 +52,35 @@ class AutoencoderKL(pl.LightningModule):
         dec = self.decode(z)
         return dec, posterior
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
+    def training_step_prim(self, batch, batch_idx, optimizer_idx):
         inputs = batch
         reconstructions, posterior = self(inputs)
-
-        if optimizer_idx == 0:
-            # train encoder+decoder+logvar
-            aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
-                                            last_layer=self.get_last_layer(), split="train")
-            self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
-            self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
-            return aeloss
-
-        if optimizer_idx == 1:
-            # train the discriminator
-            discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
+        opt = self.optimizers()[optimizer_idx]
+        loss = None
+        with opt.toggle_model():
+            if optimizer_idx == 0:
+                # train encoder+decoder+logvar
+                aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
                                                 last_layer=self.get_last_layer(), split="train")
+                self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+                self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+                loss = aeloss
 
-            self.log("discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
-            self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
-            return discloss
+            if optimizer_idx == 1:
+                # train the discriminator
+                discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
+                                                    last_layer=self.get_last_layer(), split="train")
+
+                self.log("discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+                self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+                loss = discloss
+            self.manual_backward(loss)
+            opt.step()
+            opt.zero_grad()
+    
+    def training_step(self, batch, batch_idx):
+        self.training_step_prim(batch, batch_idx, 0)
+        self.training_step_prim(batch, batch_idx, 1)
 
     def validation_step(self, batch, batch_idx):
         inputs = batch
