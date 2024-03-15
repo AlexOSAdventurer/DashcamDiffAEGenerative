@@ -5,3 +5,4 @@ image_dataset_synthesis/*.npy
 lightning_logs/
 **/__pycache__/
 config_files/**/grid_search/
+**/*.ckpt
