@@ -1,0 +1,20 @@
+model:
+  gpus: 3
+  nodes: 1
+  batch_size: 64
+  first_stage_needed: True
+  base_learning_rate: 0.000025
+  total_samples: {total_samples}
+  in_size: 4096
+  in_size_sqrt: 64
+  t_range: 1000
+  img_depth: 3
+  beta_small: 0.0001
+  beta_large: 0.02
+  unet_config: {unet_config}
+  recycle_previous_version: False
+  previous_version: 0
+data:
+  train_dataset_length: {train_dataset_length}
+  train: image_dataset_synthesis/train_images_64x64_latent.npy
+  val: image_dataset_synthesis/val_images_64x64_latent.npy
