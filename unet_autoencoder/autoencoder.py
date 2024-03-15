@@ -3,9 +3,9 @@ import torch.nn.functional as F
 from torch import nn
 import math
 
-# We assume channels can be cleanly divided by 16
-def UNetLayerNormalization(channels):
-    return torch.nn.GroupNorm(16, channels)
+# We assume channels can be cleanly divided by 16 if greater than 16
+def UNetLayerNormalization(channels, block_list_base_channels):
+    return torch.nn.GroupNorm(block_list_base_channels, channels)
 
 def Upsample(x):
     return F.interpolate(x, scale_factor=2, mode="nearest")
@@ -43,15 +43,17 @@ def zero_module(module):
     return module
 
 class UNetBlock(torch.nn.Module):
-    def __init__(self, input_channels, output_channels):
+    def __init__(self, input_channels, output_channels, block_list_base_channels, latent_space):
         super().__init__()
         self.input_channels = input_channels
         self.output_channels = output_channels
+        self.block_list_base_channels = block_list_base_channels
+        self.latent_space = latent_space
         self.block_list = torch.nn.Sequential(
-            UNetLayerNormalization(input_channels),
+            UNetLayerNormalization(input_channels, block_list_base_channels),
             activation(),
             conv_nd(input_channels, output_channels),
-            UNetLayerNormalization(output_channels),
+            UNetLayerNormalization(output_channels, block_list_base_channels),
             activation(),
             dropout(),
             conv_nd(output_channels, output_channels)
@@ -62,12 +64,13 @@ class UNetBlock(torch.nn.Module):
         return self.block_list(x) + self.skip_connection(x)
 
 class UNetBlockConditional(torch.nn.Module):
-    def __init__(self, input_channels, output_channels):
+    def __init__(self, input_channels, output_channels, block_list_base_channels, latent_space):
         super().__init__()
         self.input_channels = input_channels
         self.output_channels = output_channels
-        self.semantic_latent_channels = 512
-        self.timestep_dims = 512
+        self.block_list_base_channels = block_list_base_channels
+        self.semantic_latent_channels = latent_space
+        self.timestep_dims = latent_space
         self.semantic_affine = torch.nn.Sequential(
             activation(),
             torch.nn.Linear(self.semantic_latent_channels, output_channels)
@@ -77,10 +80,10 @@ class UNetBlockConditional(torch.nn.Module):
             torch.nn.Linear(self.timestep_dims, 2 * output_channels)
         )
         self.block_list_1 = torch.nn.Sequential(
-            UNetLayerNormalization(input_channels),
+            UNetLayerNormalization(input_channels, block_list_base_channels),
             activation(),
             conv_nd(input_channels, output_channels),
-            UNetLayerNormalization(output_channels))
+            UNetLayerNormalization(output_channels, block_list_base_channels))
         self.block_list_2 = torch.nn.Sequential(
             activation(),
             dropout(),
@@ -112,12 +115,13 @@ class DownsamplerBlock(torch.nn.Module):
         return self.conv(x)
 
 class AttentionBlock(torch.nn.Module):
-    def __init__(self, channels, num_heads=1):
+    def __init__(self, channels, block_list_base_channels, num_heads=1):
         super().__init__()
         self.channels = channels
+        self.block_list_base_channels = block_list_base_channels
         self.num_heads = num_heads
 
-        self.norm = UNetLayerNormalization(channels)
+        self.norm = UNetLayerNormalization(channels, block_list_base_channels)
         self.qkv = conv_fc(channels, channels * 3)
         self.attention = QKVAttentionDiffAE(self.num_heads)
 
@@ -149,12 +153,14 @@ class QKVAttentionDiffAE(torch.nn.Module):
         return a.reshape(batch_size, -1, length)
 
 class UNetBlockGroup(torch.nn.Module):
-    def __init__(self, input_channels, output_channels, num_res_blocks, upsample=False, upsample_target_channels = None, downsample=False, conditional=False, num_heads=None, conc=False, conc_channels=0):
+    def __init__(self, input_channels, output_channels, block_list_base_channels, latent_space, num_res_blocks, upsample=False, upsample_target_channels = None, downsample=False, conditional=False, num_heads=None, conc=False, conc_channels=0):
         super().__init__()
         block_type = UNetBlockConditional if conditional else UNetBlock
         self.block_list = torch.nn.ModuleList([])
         self.input_channels = input_channels
         self.output_channels = output_channels
+        self.block_list_base_channels = block_list_base_channels
+        self.latent_space = latent_space
         self.num_res_blocks = num_res_blocks
         self.upsample = upsample
         self.upsample_target_channels = upsample_target_channels
@@ -162,11 +168,11 @@ class UNetBlockGroup(torch.nn.Module):
         self.conditional = conditional
         self.conc = conc
         self.conc_channels = conc_channels
-        self.block_list.append(block_type(input_channels + conc_channels, output_channels))
+        self.block_list.append(block_type(input_channels + conc_channels, output_channels, block_list_base_channels, latent_space))
         for i in range(self.num_res_blocks - 1):
-            self.block_list.append(block_type(output_channels + conc_channels, output_channels))
+            self.block_list.append(block_type(output_channels + conc_channels, output_channels, block_list_base_channels, latent_space))
             if (num_heads is not None):
-                self.block_list.append(AttentionBlock(output_channels, num_heads))
+                self.block_list.append(AttentionBlock(output_channels, block_list_base_channels, num_heads))
         assert (not (self.upsample and self.downsample)), "You can't be both upsampling and downsampling!"
         if upsample:
             self.upsample_conv = conv_nd(self.output_channels, self.upsample_target_channels)
@@ -230,12 +236,12 @@ class UNetEncoder(torch.nn.Module):
         for entry in self.block_list_channels_mult:
             current_channels = self.block_list_base_channels * entry
             current_heads = self.attention_heads[self.attention_resolutions.index(current_resolution)] if current_resolution in self.attention_resolutions else None
-            self.block_list.append(UNetBlockGroup(previous_channels, current_channels, self.num_res_blocks, upsample=False, downsample=True, conditional=False, num_heads=current_heads))
+            self.block_list.append(UNetBlockGroup(previous_channels, current_channels, self.block_list_base_channels, None, self.num_res_blocks, upsample=False, downsample=True, conditional=False, num_heads=current_heads))
             previous_channels = current_channels
             current_resolution = current_resolution // 2
 
         self.final_output_module = torch.nn.Sequential(
-            UNetLayerNormalization(previous_channels),
+            UNetLayerNormalization(previous_channels, self.block_list_base_channels),
             activation(),
             torch.nn.AdaptiveAvgPool2d((1,1)),
             conv_fc(previous_channels, self.latent_space),
@@ -287,12 +293,12 @@ class UNet(torch.nn.Module):
             last_block = (i == (len(self.block_list_channels_mult) - 1))
             current_channels = self.block_list_base_channels * entry
             current_heads = self.attention_heads[self.attention_resolutions.index(current_resolution)] if current_resolution in self.attention_resolutions else None
-            self.downSide.append(UNetBlockGroup(previous_channels, current_channels, self.num_res_blocks, upsample=False, downsample=(not last_block), conditional=True, num_heads=current_heads))
+            self.downSide.append(UNetBlockGroup(previous_channels, current_channels, self.block_list_base_channels, self.latent_space, self.num_res_blocks, upsample=False, downsample=(not last_block), conditional=True, num_heads=current_heads))
             previous_channels = current_channels
             if not last_block:
                 current_resolution = current_resolution // 2
         current_heads = self.attention_heads[self.attention_resolutions.index(current_resolution)] if current_resolution in self.attention_resolutions else None
-        self.middleModule = UNetBlockGroup(previous_channels, previous_channels, self.num_res_blocks, upsample=False, upsample_target_channels = previous_channels, downsample=False, conditional=True, num_heads=current_heads)
+        self.middleModule = UNetBlockGroup(previous_channels, previous_channels, self.block_list_base_channels, self.latent_space, self.num_res_blocks, upsample=False, upsample_target_channels = previous_channels, downsample=False, conditional=True, num_heads=current_heads)
         current_resolution = current_resolution * 2
         block_list_channels_mult_reversed = self.block_list_channels_mult[::-1]
         for i, entry in enumerate(block_list_channels_mult_reversed):
@@ -302,7 +308,7 @@ class UNet(torch.nn.Module):
             current_heads = self.attention_heads[self.attention_resolutions.index(current_resolution)] if current_resolution in self.attention_resolutions else None
             #next_channels = self.block_list_base_channels * next_entry
             #self.upSide.append(UNetBlockGroup(previous_channels, current_channels, self.num_res_blocks, upsample=True, upsample_target_channels = next_channels, downsample=False, conditional=True, num_heads=current_heads, conc=True, conc_channels=))
-            self.upSide.append(UNetBlockGroup(previous_channels, current_channels, self.num_res_blocks, upsample=(not last_block), upsample_target_channels = current_channels, downsample=False, conditional=True, num_heads=current_heads, conc=True, conc_channels=current_channels))
+            self.upSide.append(UNetBlockGroup(previous_channels, current_channels, self.block_list_base_channels, self.latent_space, self.num_res_blocks, upsample=(not last_block), upsample_target_channels = current_channels, downsample=False, conditional=True, num_heads=current_heads, conc=True, conc_channels=current_channels))
             if (not last_block):
                 current_resolution = current_resolution * 2
             previous_channels = current_channels
