@@ -2,8 +2,11 @@ diffae:
   diffae_config: {diffae_config}
   checkpoint_file: {diffae_checkpoint}
 model:
-  batch_size: 64
+  gpus: 1
+  nodes: 1
+  batch_size: 128
   total_samples: {total_samples}
+  latent_space: {latent_space}
 data:
   train_dataset_length: {train_dataset_length}
   train: image_dataset_synthesis/train_images_64x64_latent.npy

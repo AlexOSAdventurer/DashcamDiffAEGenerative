@@ -1,6 +1,6 @@
 import os
 os.environ['MASTER_ADDR'] = 'localhost'
-os.environ['MASTER_PORT'] = '12356'
+os.environ['MASTER_PORT'] = os.environ['USER_SET_MASTER_PORT']
 os.environ['PL_TORCH_DISTRIBUTED_BACKEND'] = 'gloo'
 import torch
 from data import ImageDataset, OriginalImageDataset
@@ -15,10 +15,11 @@ from pytorch_lightning.strategies import DDPStrategy
 
 config_file = os.environ['AUTOENCODER_CONFIG']
 config_data = yaml.safe_load(open(config_file))
-config_choice = f"{config_file}"
+config_choice = os.path.dirname(config_file)
 base_dir = os.path.dirname(__file__)
 dataset_path_train = os.path.join(base_dir, config_data['data']['train'])
 dataset_path_val = os.path.join(base_dir, config_data['data']['val'])
+dataset_train_dataset_length = int(config_data['data']['train_dataset_length'])
 
 # Loading parameters
 load_model = config_data['model']['recycle_previous_version']
@@ -37,12 +38,12 @@ dataset_type = ImageDataset if config_data['model']['first_stage_needed'] else O
 if __name__ == '__main__':
     torch.set_float32_matmul_precision('medium')
     # Create datasets and data loaders
-    train_dataset = dataset_type(dataset_path_train)
-    val_dataset = dataset_type(dataset_path_val)
+    train_dataset = dataset_type(dataset_path_train, dataset_train_dataset_length)
+    val_dataset = dataset_type(dataset_path_val, dataset_train_dataset_length)
 
     train_loader = DataLoader(train_dataset, batch_size=config_data["model"]["batch_size"], num_workers=1, shuffle=True, pin_memory=True, persistent_workers=True)
     val_loader = DataLoader(val_dataset, batch_size=8, num_workers=1, shuffle=False, pin_memory=True, persistent_workers=True)
-    seed_everything(123, workers=True)
+    seed_everything(1234567, workers=True)
     ddp = DDPStrategy(process_group_backend="gloo", find_unused_parameters=True)
 
     if load_model:
@@ -62,7 +63,7 @@ if __name__ == '__main__':
         def __init__(
             self,
             batch_size: int = 4,
-            workers: int = 8,
+            workers: int = 1,
             **kwargs,
         ):
             super().__init__()
