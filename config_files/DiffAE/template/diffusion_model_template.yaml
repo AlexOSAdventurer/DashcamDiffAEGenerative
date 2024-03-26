@@ -1,7 +1,7 @@
 model:
   gpus: 1
   nodes: 1
-  batch_size: 128
+  batch_size: 256
   first_stage_needed: True
   base_learning_rate: 0.000025
   total_samples: {total_samples}
@@ -16,5 +16,5 @@ model:
   previous_version: 0
 data:
   train_dataset_length: {train_dataset_length}
-  train: image_dataset_synthesis/train_images_64x64_latent.npy
-  val: image_dataset_synthesis/val_images_64x64_latent.npy
+  train: {train_dataset_64x64}
+  val: {val_dataset_64x64}

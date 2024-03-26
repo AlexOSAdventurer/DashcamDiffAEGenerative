@@ -12,6 +12,7 @@ import glob
 from pytorch_lightning.cli import LightningCLI
 import yaml
 from pytorch_lightning.strategies import DDPStrategy
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 config_file = os.environ['AUTOENCODER_CONFIG']
 config_data = yaml.safe_load(open(config_file))
@@ -39,7 +40,7 @@ if __name__ == '__main__':
     torch.set_float32_matmul_precision('medium')
     # Create datasets and data loaders
     train_dataset = dataset_type(dataset_path_train, dataset_train_dataset_length)
-    val_dataset = dataset_type(dataset_path_val, dataset_train_dataset_length)
+    val_dataset = dataset_type(dataset_path_val)
 
     train_loader = DataLoader(train_dataset, batch_size=config_data["model"]["batch_size"], num_workers=1, shuffle=True, pin_memory=True, persistent_workers=True)
     val_loader = DataLoader(val_dataset, batch_size=8, num_workers=1, shuffle=False, pin_memory=True, persistent_workers=True)
@@ -77,14 +78,17 @@ if __name__ == '__main__':
         def test_dataloader(self):
             return val_loader
 
+    checkpoint_callback = ModelCheckpoint(every_n_epochs=1, save_on_train_epoch_end=True)
     trainer = Trainer(
         devices=int(config_data['model']['gpus']),
         accelerator="gpu",
         num_nodes = int(config_data['model']['nodes']),
         check_val_every_n_epoch=25,
         max_steps=int(config_data['model']['total_samples']) // (int(config_data['model']['batch_size']) * int(config_data['model']['gpus']) * int(config_data['model']['nodes'])),
-        precision="16-mixed",
+        precision="bf16-mixed",
         strategy=ddp,
-        logger=tb_logger
+        logger=tb_logger,
+        callbacks=[checkpoint_callback]
     )
     trainer.fit(model, ImageDataModule())
+    

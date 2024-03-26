@@ -21,10 +21,12 @@ class LatentModel(pl.LightningModule):
         self.t_range = self.diffae_model_config["model"]["t_range"]
         self.diffae_checkpoint_file = config["diffae"]["checkpoint_file"]
         self.batch_size = config["model"]["batch_size"]
+        self.latent_space = config["model"]["latent_space"]
+        self.save_hyperparameters()
         self.diffae_model = DiffusionModel.load_from_checkpoint(self.diffae_checkpoint_file, config=self.diffae_model_config)
         self.diffae_model.generate_first_stage() #Overwrite the old first stage autoencoder
         self.diffae_model = self.diffae_model.eval()
-        self.latent_model = unet_autoencoder.generate_ddim_model()
+        self.latent_model = unet_autoencoder.generate_ddim_model(self.latent_space)
 
     def fetch_encoding(self, batch, sample):
         return self.diffae_model.fetch_encoding(batch, sample)
@@ -43,21 +45,27 @@ class LatentModel(pl.LightningModule):
         return F.mse_loss(estimated_noise, source_noise)
 
     def training_step(self, batch, batch_idx):
-        encoding = self.fetch_encoding(batch, False)
-        z_sem = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, encoding)
+        '''
+            encoding = self.fetch_encoding(batch, False)
+            z_sem = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, encoding)
+        '''
+        z_sem = batch
         loss = self.get_loss(z_sem, batch_idx)
         self.log("train/loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        encoding = self.fetch_encoding(batch, False)
-        z_sem = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, encoding)
+        '''
+            encoding = self.fetch_encoding(batch, False)
+            z_sem = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, encoding)
+        '''
+        z_sem = batch
         loss = self.get_loss(z_sem, batch_idx)
         self.log("val/loss", loss)
         return loss
 
     def on_validation_epoch_end(self):
-        if ((self.global_rank != 0) or ((self.current_epoch % 250) != 248)):
+        if (self.global_rank != 0):
             return
         # Get tensorboard logger
         tb_logger = None
@@ -68,7 +76,7 @@ class LatentModel(pl.LightningModule):
 
         if tb_logger is None:
                 raise ValueError('TensorBoard Logger not found')
-        batch_dim = (10, 512)
+        batch_dim = (10, self.latent_space)
         z_sem_noised = torch.randn(batch_dim).to(self.device)
         z_sem = diffusion.denoise_process_multiple_images(self.latent_model, z_sem_noised, None, self.t_range, self.beta_small, self.beta_large)
         print("Z_sem created!")

@@ -492,17 +492,17 @@ class Autoencoder(torch.nn.Module):
         return self.unet(x, t, cond)
 
 class DDIM(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, latent_space):
         super().__init__()
-        self.mlp_skip_net = MLPSkipNet()
+        self.mlp_skip_net = MLPSkipNet(latent_space)
 
     def forward(self, x, t):
         return self.mlp_skip_net(x, t)
 
 class MLPSkipNet(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, latent_space):
         super().__init__()
-        self.num_channels = 512
+        self.num_channels = latent_space
         self.num_hidden_channels = 2048
         self.num_time_layers = 2
         self.num_time_emb_channels = 64

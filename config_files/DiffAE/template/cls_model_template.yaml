@@ -4,12 +4,14 @@ diffae:
 model:
   gpus: 1
   nodes: 1
-  batch_size: 128
+  batch_size: 256
   total_samples: {total_samples}
   latent_space: {latent_space}
 data:
   train_dataset_length: {train_dataset_length}
-  train: image_dataset_synthesis/train_images_64x64_latent.npy
-  val: image_dataset_synthesis/val_images_64x64_latent.npy
-  train_labels: image_dataset_synthesis/train_labels.npy
-  val_labels: image_dataset_synthesis/val_labels.npy
+  train_images: {train_dataset_64x64}
+  val_images: {val_dataset_64x64}
+  train: {train_dataset_semantic}
+  val: {val_dataset_semantic}
+  train_labels: {train_dataset_labels}
+  val_labels: {val_dataset_labels}

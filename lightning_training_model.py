@@ -21,6 +21,7 @@ class DiffusionModel(pl.LightningModule):
         self.in_size_sqrt = config["model"]["in_size_sqrt"]
         self.img_depth = config["model"]["img_depth"]
         self.config = config
+        self.save_hyperparameters()
         if "unet_config" in config["model"]:
             print(f"UNET CONFIG FILE: {config['model']['unet_config']}")
             self.unet_autoencoder = unet_autoencoder.generate_model(config["model"]["unet_config"])

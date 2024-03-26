@@ -8,8 +8,8 @@ def generate_model(yaml_file):
     model = autoencoder.Autoencoder(unet_config)
     return model
 
-def generate_ddim_model():
-    model = autoencoder.DDIM()
+def generate_ddim_model(latent_space):
+    model = autoencoder.DDIM(latent_space)
     return model
 
 __all__ = ['generate_model', 'generate_ddim_model']
