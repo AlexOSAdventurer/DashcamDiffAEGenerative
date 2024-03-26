@@ -11,6 +11,7 @@ from first_stage_autoencoder.distribution import DiagonalGaussianDistribution
 import unet_autoencoder
 import custom_diffusion as diffusion
 from lightning_training_model import DiffusionModel
+from torchmetrics.image.fid import FrechetInceptionDistance
 
 class LatentModel(pl.LightningModule):
     def __init__(self, config):
@@ -45,24 +46,49 @@ class LatentModel(pl.LightningModule):
         return F.mse_loss(estimated_noise, source_noise)
 
     def training_step(self, batch, batch_idx):
-        '''
+        z_sem = None
+        #If we were given the images instead of the semantic, generate the semantic
+        if (len(batch.shape) > 2):
             encoding = self.fetch_encoding(batch, False)
             z_sem = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, encoding)
-        '''
-        z_sem = batch
+        else:
+            z_sem = batch
         loss = self.get_loss(z_sem, batch_idx)
         self.log("train/loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        '''
+        z_sem = None
+        #If we were given the images instead of the semantic, generate the semantic
+        if (len(batch.shape) > 2):
             encoding = self.fetch_encoding(batch, False)
             z_sem = diffusion.encode_semantic(self.diffae_model.unet_autoencoder.encoder, encoding)
-        '''
-        z_sem = batch
+        else:
+            z_sem = batch
         loss = self.get_loss(z_sem, batch_idx)
         self.log("val/loss", loss)
         return loss
+
+    def on_test_epoch_start():
+        self.fid_score = FrechetInceptionDistance(feature=2048, reset_real_features=False, normalize=True)
+
+    # We assume we are always given the image dataset, not the semantic dataset
+    def test_step(self, batch, batch_idx):
+        batch_size = batch.shape[0]
+        fid.update(batch, real=True)
+        batch_dim = (batch_size, self.latent_space)
+        z_sem_noised = torch.randn(batch_dim).to(self.device)
+        z_sem = diffusion.denoise_process_multiple_images(self.latent_model, z_sem_noised, None, self.t_range, self.beta_small, self.beta_large))
+        x_t = torch.randn((batch_dim[0], 3, 64, 64)).to(self.device)
+        reconstructed_x_0 = diffusion.denoise_process_multiple_images(self.diffae_model.unet_autoencoder, x_t, z_sem, self.t_range, self.beta_small, self.beta_large)
+        reconstructed_images = self.decode_encoding(reconstructed_x_0)
+        fid.update(reconstructed_images, real=False)
+        current_fid = self.fid_score.compute()
+        self.log("test/current_fid", current_fid)
+        return current_fid
+
+    def on_test_epoch_end():
+        self.log("test/final_fid", self.fid_score.compute())
 
     def on_validation_epoch_end(self):
         if (self.global_rank != 0):

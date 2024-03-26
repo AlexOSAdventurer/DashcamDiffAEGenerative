@@ -66,10 +66,10 @@ class ImageLabelDataset(Dataset):
         return torch.from_numpy(self.semantic_data[index].copy()).type(torch.FloatTensor), torch.from_numpy(self.label_data[index].copy()).type(torch.FloatTensor)
 
     def get_conds_mean(self):
-        return self.semantic_data.mean(axis=0)
+        return self.semantic_data[:self.train_dataset_length].mean(axis=0)
 
     def get_conds_std(self):
-        return self.semantic_data.std(axis=0)
+        return self.semantic_data[:self.train_dataset_length].std(axis=0)
 
     def __len__(self):
         return self.total_sequences
