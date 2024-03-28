@@ -19,17 +19,16 @@ config_data = yaml.safe_load(open(config_file))
 config_choice = os.path.dirname(config_file)
 base_dir = os.path.dirname(__file__)
 latent_checkpoint = os.path.join(config_choice, "latent_model.ckpt")
-dataset_path_val = os.path.join(base_dir, config_data['data']['val'])
-dataset_train_dataset_length = int(config_data['data']['train_dataset_length'])
+dataset_path_val = os.path.join(base_dir, config_data['data']['val_images'])
 diffusion_config = yaml.safe_load(open(config_data["diffae"]["diffae_config"]))
-dataset_type = ImageDataset if config_data['model']['first_stage_needed'] else OriginalImageDataset
+dataset_type = ImageDataset
 
 if __name__ == '__main__':
     torch.set_float32_matmul_precision('medium')
     # Create datasets and data loaders
-    val_dataset = dataset_type(dataset_path_val)
+    val_dataset = dataset_type(dataset_path_val, reset_mmap=True)
 
-    val_loader = DataLoader(val_dataset, batch_size=256, num_workers=1, shuffle=False, pin_memory=True, persistent_workers=True)
+    val_loader = DataLoader(val_dataset, batch_size=128, num_workers=1, shuffle=False, pin_memory=True, persistent_workers=True)
     seed_everything(1234567, workers=True)
     ddp = DDPStrategy(process_group_backend="gloo", find_unused_parameters=True)
     model = LatentModel(config_data)

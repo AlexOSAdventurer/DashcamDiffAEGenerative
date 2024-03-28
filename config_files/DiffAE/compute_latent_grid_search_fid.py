@@ -30,7 +30,7 @@ def launch_test(args):
         return
 
 if __name__ == '__main__':
-    parallel_training_units = 12
+    parallel_training_units = 4
     current_folder = os.path.dirname(__file__)
     grid_search_folder = os.path.join(current_folder, "grid_search")
     configuration_folders = os.listdir(grid_search_folder)

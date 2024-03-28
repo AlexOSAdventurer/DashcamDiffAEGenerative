@@ -3,26 +3,32 @@ import numpy as np
 import math
 from numba import njit, jit, cuda
 
-@torch.jit.script
+_alpha_bar_cache = {}
+
 def _beta(current_t: float, max_t: float, beta_small: float, beta_large: float):
     return beta_small + (current_t / max_t) * (beta_large - beta_small)
 
-@torch.jit.script
 def _alpha(current_t: float, max_t: float, beta_small: float, beta_large: float):
     return 1.0 - _beta(current_t, max_t, beta_small, beta_large)
 
-@torch.jit.script
-def _alpha_bar(current_t: float, max_t: float, beta_small: float, beta_large: float):
-    #return math.prod([_alpha(current_t, max_t, beta_small, beta_large) for j in range(current_t)])
-    current_t_int = torch.jit.annotate(int, int(current_t))
-    return torch.prod(torch.tensor([_alpha(current_t, max_t, beta_small, beta_large) for j in range(current_t_int)]))
+def _alpha_bar_create_cache(max_t: float, beta_small: float, beta_large: float):
+    max_t_int = int(max_t)
+    result = []
+    for i in range(max_t_int):
+        result.append(math.prod([_alpha(float(i), max_t, beta_small, beta_large) for j in range(i)]))
+    return result
 
-@torch.jit.script
+def _alpha_bar(current_t: float, max_t: float, beta_small: float, beta_large: float):
+    cache_key = f"{max_t}_{beta_small}_{beta_large}"
+    if not (cache_key in _alpha_bar_cache):
+        _alpha_bar_cache[cache_key] = _alpha_bar_create_cache(max_t, beta_small, beta_large)
+    current_t_int = int(current_t)
+    return _alpha_bar_cache[cache_key][current_t_int]
+
 def create_random_time_steps(number_of_items: int, max_t: int, device: torch.device):
     #return torch.from_numpy(np.random.choice(max_t, size=(number_of_items,), p=np.ones([max_t])/max_t)).to(device)
     return torch.randint(low=0, high=max_t, size=(number_of_items,)).to(device)
 
-@torch.jit.script
 def diffuse_images(images: torch.Tensor, time_steps: torch.Tensor, max_t: int, beta_small: float, beta_large: float):
     noised_images = torch.empty_like(images)
     source_noise = torch.randn_like(images)
@@ -54,7 +60,6 @@ def encode_semantic(semantic_encoder, images):
 
 # We return only the mean of this distribution - its variance is 0
 # We also expect an input dimension for the images of (3,size,size) - no batch dimension
-@torch.jit.script
 def q_distribution_single_image(x_t: torch.Tensor, x_0: torch.Tensor, current_t: float, max_t: float, beta_small: float, beta_large: float):
     _alpha_bar_t = _alpha_bar(current_t, max_t, beta_small, beta_large)
     _sqrt_alpha_bar_t = math.sqrt(_alpha_bar_t)
@@ -69,7 +74,6 @@ def q_distribution_single_image(x_t: torch.Tensor, x_0: torch.Tensor, current_t:
     return ((_sqrt_alpha_bar_t_minus_1 * x_0) + (_sqrt_one_minus_alpha_bar_t_minus_1 * last_quarter_of_equation))
 
 #Like q_distribution_single_image, but x_t, x_0 have a batch dimension, and current_t is a 1-d tensor
-@torch.jit.script
 def q_distribution_multiple_images(x_t: torch.Tensor, x_0: torch.Tensor, current_t: torch.Tensor, max_t: int, beta_small: float, beta_large: float):
     # We can use either x_t or x_0 here, as long as they are on the same device
     result = torch.empty_like(x_0)

@@ -69,26 +69,64 @@ class LatentModel(pl.LightningModule):
         self.log("val/loss", loss)
         return loss
 
-    def on_test_epoch_start():
-        self.fid_score = FrechetInceptionDistance(feature=2048, reset_real_features=False, normalize=True)
+    def create_unconditional_samples(self, batch_size, delete_intermediate=True):
+        batch_dim = (batch_size, self.latent_space)
+        z_sem_noised = torch.randn(batch_dim).to(self.device)
+        print("Denoising z_sem....")
+        z_sem = diffusion.denoise_process_multiple_images(self.latent_model, z_sem_noised, None, self.t_range, self.beta_small, self.beta_large)
+        print("Denoising x_t now....")
+        x_t = torch.randn((batch_dim[0], 3, 64, 64)).to(self.device)
+        reconstructed_x_0 = diffusion.denoise_process_multiple_images(self.diffae_model.unet_autoencoder, x_t, z_sem, self.t_range, self.beta_small, self.beta_large)
+        print("Decoding x_0!")
+        reconstructed_images = self.decode_encoding(reconstructed_x_0)
+        if (delete_intermediate):
+            del z_sem_noised
+            del z_sem
+            del x_t
+            del reconstructed_x_0
+        return reconstructed_images
+
+    def on_test_epoch_start(self):
+        self.fid_score = FrechetInceptionDistance(feature=2048, reset_real_features=False, normalize=True).to(self.device)
 
     # We assume we are always given the image dataset, not the semantic dataset
     def test_step(self, batch, batch_idx):
         batch_size = batch.shape[0]
-        fid.update(batch, real=True)
+        self.fid_score.update(self.decode_encoding(self.fetch_encoding(batch, False)).to(self.fid_score.device), real=True)
         batch_dim = (batch_size, self.latent_space)
         z_sem_noised = torch.randn(batch_dim).to(self.device)
-        z_sem = diffusion.denoise_process_multiple_images(self.latent_model, z_sem_noised, None, self.t_range, self.beta_small, self.beta_large))
+        print("Denoising z_sem....")
+        z_sem = diffusion.denoise_process_multiple_images(self.latent_model, z_sem_noised, None, self.t_range, self.beta_small, self.beta_large)
+        print("Denoising x_t now....")
         x_t = torch.randn((batch_dim[0], 3, 64, 64)).to(self.device)
         reconstructed_x_0 = diffusion.denoise_process_multiple_images(self.diffae_model.unet_autoencoder, x_t, z_sem, self.t_range, self.beta_small, self.beta_large)
-        reconstructed_images = self.decode_encoding(reconstructed_x_0)
-        fid.update(reconstructed_images, real=False)
+        print("Decoding x_0!")
+        reconstructed_images = self.decode_encoding(reconstructed_x_0).cpu().to(self.fid_score.device)
+        self.fid_score.update(reconstructed_images, real=False)
         current_fid = self.fid_score.compute()
-        self.log("test/current_fid", current_fid)
+        self.log("test/current_fid", current_fid, on_step=True)
         return current_fid
 
-    def on_test_epoch_end():
-        self.log("test/final_fid", self.fid_score.compute())
+    def test_step(self, batch, batch_idx):
+        batch_size = batch.shape[0]
+        self.fid_score.update(self.decode_encoding(self.fetch_encoding(batch, False)).to(self.fid_score.device), real=True)
+        reconstructed_images = self.create_unconditional_samples(batch_size).cpu().to(self.fid_score.device)
+        self.fid_score.update(reconstructed_images, real=False)
+        current_fid = self.fid_score.compute()
+        self.log("test/current_fid", current_fid, on_step=True)
+        return current_fid
+
+    def on_test_epoch_end(self):
+        tb_logger = None
+        for logger in self.trainer.loggers:
+            if isinstance(logger, pl.loggers.TensorBoardLogger):
+                tb_logger = logger.experiment
+                break
+
+        if tb_logger is None:
+                raise ValueError('TensorBoard Logger not found')
+
+        tb_logger.add_scalar("test/final_fid", float(self.fid_score.compute().item()), 0)
 
     def on_validation_epoch_end(self):
         if (self.global_rank != 0):
