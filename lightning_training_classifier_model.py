@@ -36,8 +36,8 @@ class ClsModel(pl.LightningModule):
 
     def get_conds_stats(self):
         train_dataset = ImageLabelDataset(self.train_input_file_path, self.train_label_file_path, self.train_length)
-        self.conds_mean = train_dataset.get_conds_mean()
-        self.conds_std = train_dataset.get_conds_std()
+        self.conds_mean = torch.from_numpy(train_dataset.get_conds_mean()).to(self.device)
+        self.conds_std = torch.from_numpy(train_dataset.get_conds_std()).to(self.device)
 
     def fetch_encoding(self, batch, sample):
         return self.diffae_model.fetch_encoding(batch, sample)

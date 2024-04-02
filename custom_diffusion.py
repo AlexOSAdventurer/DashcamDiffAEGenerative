@@ -12,7 +12,10 @@ def _alpha(current_t: float, max_t: float, beta_small: float, beta_large: float)
     return 1.0 - _beta(current_t, max_t, beta_small, beta_large)
 
 def _alpha_bar_create_cache(max_t: float, beta_small: float, beta_large: float):
-    max_t_int = int(max_t)
+    # Accommodating an older out of range bug that goes to max_t + 1, instead of max_t. 
+    # For later works we will need to fix this, but in order to keep all of the current results
+    # replicable, we're sticking with this.
+    max_t_int = int(max_t) + 1
     result = []
     for i in range(max_t_int):
         result.append(math.prod([_alpha(float(i), max_t, beta_small, beta_large) for j in range(i)]))
@@ -82,10 +85,11 @@ def q_distribution_multiple_images(x_t: torch.Tensor, x_0: torch.Tensor, current
     return result
 
 # We expect this to be batched like in q_distribution_multiple_images
-def f_theta_multiple_images(ddim_model, x_t, t, z_sem, max_t, beta_small, beta_large):
+def f_theta_multiple_images(ddim_model, x_t, t, z_sem, max_t, beta_small, beta_large, e_theta=None):
     # We can use either x_t or x_0 here, as long as they are on the same device
     result = torch.empty_like(x_t)
-    e_theta = estimate_noise(ddim_model, x_t, t, z_sem)
+    if (e_theta is None):
+        e_theta = estimate_noise(ddim_model, x_t, t, z_sem)
 
     for i in range(t.shape[0]):
         _alpha_bar_t = _alpha_bar(int(t[i]), max_t, beta_small, beta_large)
@@ -121,7 +125,7 @@ def stochastic_encode_process_multiple_images(ddim_model, x_0, z_sem, max_t, bet
         _sqrt_alpha_bar_t_plus_1 = math.sqrt(_alpha_bar_t_plus_1)
         _sqrt_one_minus_alpha_bar_t_plus_1 = math.sqrt(1.0 - _alpha_bar_t_plus_1)
 
-        f_theta_result = f_theta_multiple_images(ddim_model, x_0, current_t_repeat, z_sem, max_t, beta_small, beta_large)
         e_theta = estimate_noise(ddim_model, x_0, current_t_repeat, z_sem)
+        f_theta_result = f_theta_multiple_images(ddim_model, x_0, current_t_repeat, z_sem, max_t, beta_small, beta_large, e_theta)        
         x_0 = (_sqrt_alpha_bar_t_plus_1 * f_theta_result) + (_sqrt_one_minus_alpha_bar_t_plus_1 * e_theta)
     return x_0
